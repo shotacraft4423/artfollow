@@ -74,5 +74,14 @@ export const config = {
   },
   get openaiBatchSize() {
     return parseInt(optional("OPENAI_BATCH_SIZE", "10"), 10);
+  },
+  get tweetsCacheMaxAgeDays() {
+    return parseInt(optional("TWEETS_CACHE_MAX_AGE_DAYS", "14"), 10);
+  },
+  get mutualFollowMaxPages() {
+    return parseInt(optional("MUTUAL_FOLLOW_MAX_PAGES", "10"), 10);
+  },
+  get mutualFollowDelayMs() {
+    return parseInt(optional("MUTUAL_FOLLOW_DELAY_MS", "500"), 10);
   }
 };

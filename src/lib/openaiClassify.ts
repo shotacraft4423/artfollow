@@ -23,7 +23,7 @@ export type ClassifyCandidate = {
 
 export type ClassifyResult = {
   id: string;
-  is_artist: boolean;
+  is_match: boolean;
   confidence: number;
   reason: string;
 };
@@ -34,15 +34,21 @@ export function computeContentHash(candidate: Pick<ClassifyCandidate, "descripti
   return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 16);
 }
 
-const SYSTEM_PROMPT = `あなたはX(Twitter)のアカウントを分析し、「自分でイラスト・漫画・絵などのビジュアルアート作品を創作して投稿している人物(絵描きアカウント)」かどうかを判定するアシスタントです。
+function buildSystemPrompt(queryText: string): string {
+  return `あなたはX(Twitter)のアカウントを分析し、次の条件に当てはまる人物かどうかを判定するアシスタントです。
 
-判定基準:
-- プロフィール文(bio)に絵師・イラストレーター・お絵描き・pixiv・コミッション等の創作活動を示す記述があるか
-- 直近の投稿本文のサンプルに創作活動を示す内容があるか
-- 直近の投稿のうち画像/動画付き投稿の割合(media_count / checked_count)が高いか。ただし写真(コスプレ・風景・生活写真など)だけを投稿しているアカウントは絵描きではない可能性が高いので、alt_textサンプルやテキストサンプルの内容も踏まえて判断すること
-- 他人の作品を紹介・引用しているだけ、いわゆる「絵を見るのが好きな人」は絵描きアカウントに含めない。あくまで自作イラストを投稿している本人を対象とする
+条件: 「${queryText}」
 
-各アカウントについて is_artist (真偽)、confidence (0.0〜1.0の確信度)、reason (日本語で1文の簡潔な根拠) を返してください。情報が不十分な場合は confidence を低めにしてください。`;
+判定材料:
+- プロフィール文(bio)の内容
+- 直近の投稿本文のサンプル(recent_post_text_samples)
+- 直近の投稿のうち画像/動画付き投稿の割合(recent_posts_with_media / recent_posts_checked)。ただし画像を投稿していること自体は条件と無関係な場合もあるので、条件文の内容に照らして関連性を判断すること
+- 画像のalt textサンプル(recent_post_alt_text_samples)
+
+条件と無関係な情報(単にその話題が好き、他人の投稿を紹介・言及しているだけ等)だけでは条件に当てはまるとは判定しないこと。条件文が「〜している人」のように本人の行動を指す場合は、本人がそれを行っている根拠があるかを重視してください。
+
+各アカウントについて is_match (真偽)、confidence (0.0〜1.0の確信度)、reason (日本語で1文の簡潔な根拠) を返してください。情報が不十分な場合は confidence を低めにしてください。`;
+}
 
 const RESPONSE_SCHEMA = {
   type: "object",
@@ -53,11 +59,11 @@ const RESPONSE_SCHEMA = {
         type: "object",
         properties: {
           id: { type: "string" },
-          is_artist: { type: "boolean" },
+          is_match: { type: "boolean" },
           confidence: { type: "number" },
           reason: { type: "string" }
         },
-        required: ["id", "is_artist", "confidence", "reason"],
+        required: ["id", "is_match", "confidence", "reason"],
         additionalProperties: false
       }
     }
@@ -73,10 +79,14 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 // 複数アカウントを1回のAPIコールにまとめて分類する(バッチ化によりリクエスト数を削減)。
-export async function classifyBatch(candidates: ClassifyCandidate[]): Promise<Map<string, ClassifyResult>> {
+export async function classifyBatch(
+  candidates: ClassifyCandidate[],
+  queryText: string
+): Promise<Map<string, ClassifyResult>> {
   const results = new Map<string, ClassifyResult>();
   if (candidates.length === 0) return results;
 
+  const systemPrompt = buildSystemPrompt(queryText);
   const batches = chunk(candidates, config.openaiBatchSize);
 
   for (const batch of batches) {
@@ -94,7 +104,7 @@ export async function classifyBatch(candidates: ClassifyCandidate[]): Promise<Ma
     const completion = await getClient().chat.completions.create({
       model: config.openaiModel,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
           content: `以下はX(Twitter)アカウントのbioと直近投稿の要約データです。それぞれについて判定してください。\n\n${JSON.stringify(
