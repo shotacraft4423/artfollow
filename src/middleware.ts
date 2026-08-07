@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { config as appConfig } from "@/lib/config";
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"]
@@ -20,7 +21,7 @@ export function middleware(req: NextRequest) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
     }
-    const loginUrl = new URL("/login", req.url);
+    const loginUrl = new URL("/login", appConfig.publicOrigin);
     return NextResponse.redirect(loginUrl);
   }
 

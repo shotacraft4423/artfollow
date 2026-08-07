@@ -29,6 +29,16 @@ export const config = {
   get xRedirectUri() {
     return required("X_REDIRECT_URI");
   },
+  // アプリの公開オリジン(例: https://artfollow.ochinpo.click)。
+  // Cloudflare Tunnel等のリバースプロキシはオリジンへの転送時にHostヘッダーを
+  // localhost:3000 などへ書き換えることがあり、req.url からリダイレクト先を
+  // 組み立てると誤ったホストに飛んでしまう。そのため常にこの値を明示的に使う。
+  // PUBLIC_APP_URL が未設定なら X_REDIRECT_URI のオリジン部分を流用する。
+  get publicOrigin() {
+    const explicit = process.env.PUBLIC_APP_URL;
+    if (explicit) return explicit.replace(/\/$/, "");
+    return new URL(this.xRedirectUri).origin;
+  },
   get openaiApiKey() {
     return required("OPENAI_API_KEY");
   },
